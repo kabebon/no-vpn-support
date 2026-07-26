@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,13 +14,21 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	_ "github.com/mattn/go-sqlite3"
 	"gopkg.in/gomail.v2"
 )
 
 type TicketRequest struct {
+	ClientID   string `json:"client_id"`
 	Email      string `json:"email"`
 	TgUsername string `json:"tg_username"`
 	Message    string `json:"message"`
+}
+
+type TicketMessage struct {
+	Sender    string `json:"sender"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"created_at"`
 }
 
 var (
@@ -31,6 +40,7 @@ var (
 	senderName   string
 	tgBotToken   string
 	tgChatID     string
+	db           *sql.DB
 )
 
 func init() {
@@ -48,6 +58,31 @@ func init() {
 
 	if senderName == "" {
 		senderName = "KabebaVPN Support"
+	}
+
+	initDB()
+}
+
+func initDB() {
+	os.MkdirAll("./data", os.ModePerm)
+	var err error
+	db, err = sql.Open("sqlite3", "./data/tickets.db")
+	if err != nil {
+		log.Fatalf("Ошибка открытия БД: %v", err)
+	}
+
+	query := `
+	CREATE TABLE IF NOT EXISTS tickets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		client_id TEXT,
+		email TEXT,
+		sender TEXT,
+		message TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err := db.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы: %v", err)
 	}
 }
 
@@ -67,6 +102,7 @@ func main() {
 	http.Handle("/", fs)
 
 	http.HandleFunc("/api/ticket", handleTicket)
+	http.HandleFunc("/api/history", handleHistory)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -94,15 +130,20 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Message = strings.TrimSpace(req.Message)
 	req.TgUsername = strings.TrimSpace(req.TgUsername)
+	req.ClientID = strings.TrimSpace(req.ClientID)
 
 	if req.Email == "" || req.Message == "" {
 		sendJSONError(w, "Email и Проблема обязательны для заполнения", http.StatusBadRequest)
 		return
 	}
-
 	if !strings.Contains(req.Email, "@") {
 		sendJSONError(w, "Введите корректный Email адрес", http.StatusBadRequest)
 		return
+	}
+
+	// Сохраняем тикет в БД (история)
+	if req.ClientID != "" {
+		saveMessage(req.ClientID, req.Email, "client", req.Message)
 	}
 
 	if smtpHost != "" {
@@ -118,6 +159,44 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "Тикет успешно создан",
 	})
+}
+
+func saveMessage(clientID, email, sender, message string) {
+	_, err := db.Exec("INSERT INTO tickets (client_id, email, sender, message) VALUES (?, ?, ?, ?)",
+		clientID, email, sender, message)
+	if err != nil {
+		log.Printf("Ошибка сохранения сообщения: %v", err)
+	}
+}
+
+func handleHistory(w http.ResponseWriter, r *http.Request) {
+	clientID := r.URL.Query().Get("client_id")
+	if clientID == "" {
+		sendJSONError(w, "client_id required", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := db.Query("SELECT sender, message, created_at FROM tickets WHERE client_id = ? ORDER BY id ASC", clientID)
+	if err != nil {
+		sendJSONError(w, "Ошибка БД", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var history []TicketMessage
+	for rows.Next() {
+		var msg TicketMessage
+		if err := rows.Scan(&msg.Sender, &msg.Message, &msg.CreatedAt); err == nil {
+			history = append(history, msg)
+		}
+	}
+
+	if history == nil {
+		history = []TicketMessage{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
 }
 
 func processEmails(req TicketRequest) {
@@ -178,8 +257,9 @@ func sendTelegramNotification(req TicketRequest) {
 	tgInfo := "Не указан"
 	if req.TgUsername != "" { tgInfo = req.TgUsername }
 
-	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nEmail: %s\nTG: %s\n\nПроблема:\n%s", 
-		req.Email, tgInfo, req.Message)
+	// Добавляем ID в текст, чтобы потом извлечь его при ответе
+	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nID: %s\nEmail: %s\nTG: %s\n\nПроблема:\n%s", 
+		req.ClientID, req.Email, tgInfo, req.Message)
 
 	payload := map[string]string{
 		"chat_id": tgChatID,
@@ -225,6 +305,7 @@ func telegramBotListener() {
 	offset := 0
 	client := &http.Client{Timeout: 35 * time.Second}
 	emailRegex := regexp.MustCompile(`Email:\s*([^\s]+)`)
+	idRegex := regexp.MustCompile(`ID:\s*([^\s]+)`)
 
 	for {
 		url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=30", tgBotToken, offset)
@@ -258,12 +339,24 @@ func telegramBotListener() {
 				targetEmail := matches[1]
 				replyText := update.Message.Text
 
+				// Извлекаем Client ID (для сохранения в историю)
+				var clientID string
+				idMatches := idRegex.FindStringSubmatch(originalText)
+				if len(idMatches) >= 2 {
+					clientID = idMatches[1]
+				}
+
+				// Сохраняем ответ в базу
+				if clientID != "" {
+					saveMessage(clientID, targetEmail, "support", replyText)
+				}
+
 				// Отправляем письмо клиенту
 				err := sendReplyEmail(targetEmail, replyText)
 				if err != nil {
 					sendTelegramMsg(update.Message.Chat.ID, fmt.Sprintf("❌ Ошибка при отправке на почту %s: %v", targetEmail, err))
 				} else {
-					sendTelegramMsg(update.Message.Chat.ID, fmt.Sprintf("✅ Успешно! Ваш ответ отправлен клиенту на почту:\n%s", targetEmail))
+					sendTelegramMsg(update.Message.Chat.ID, fmt.Sprintf("✅ Успешно! Ваш ответ сохранен в историю и отправлен клиенту на почту:\n%s", targetEmail))
 				}
 			}
 		}
