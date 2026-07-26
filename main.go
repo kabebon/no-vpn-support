@@ -201,7 +201,8 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 
 func processEmails(req TicketRequest) {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
-	
+	dialer.SSL = true
+
 	fromEmail := os.Getenv("SMTP_FROM")
 	if fromEmail == "" {
 		fromEmail = smtpUser
@@ -366,7 +367,8 @@ func telegramBotListener() {
 
 func sendReplyEmail(toEmail, replyText string) error {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
-	
+	dialer.SSL = true
+
 	fromEmail := os.Getenv("SMTP_FROM")
 	if fromEmail == "" {
 		fromEmail = smtpUser
