@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"regexp"
@@ -18,13 +20,6 @@ import (
 	"gopkg.in/gomail.v2"
 )
 
-type TicketRequest struct {
-	ClientID   string `json:"client_id"`
-	Email      string `json:"email"`
-	TgUsername string `json:"tg_username"`
-	Message    string `json:"message"`
-}
-
 type TicketMessage struct {
 	Sender    string `json:"sender"`
 	Message   string `json:"message"`
@@ -36,10 +31,12 @@ var (
 	smtpPort     int
 	smtpUser     string
 	smtpPass     string
+	smtpFrom     string
 	supportEmail string
 	senderName   string
 	tgBotToken   string
 	tgChatID     string
+	cabinetURL   string
 	db           *sql.DB
 )
 
@@ -51,13 +48,18 @@ func init() {
 	smtpPort, _ = strconv.Atoi(portStr)
 	smtpUser = os.Getenv("SMTP_USER")
 	smtpPass = os.Getenv("SMTP_PASS")
+	smtpFrom = os.Getenv("SMTP_FROM")
+	if smtpFrom == "" {
+		smtpFrom = smtpUser
+	}
 	supportEmail = os.Getenv("SUPPORT_EMAIL")
 	senderName = os.Getenv("SENDER_NAME")
 	tgBotToken = os.Getenv("TG_BOT_TOKEN")
 	tgChatID = os.Getenv("TG_CHAT_ID")
+	cabinetURL = os.Getenv("CABINET_URL")
 
 	if senderName == "" {
-		senderName = "KabebaVPN Support"
+		senderName = "Поддержка KabebaVPN"
 	}
 
 	initDB()
@@ -65,6 +67,7 @@ func init() {
 
 func initDB() {
 	os.MkdirAll("./data", os.ModePerm)
+	os.MkdirAll("./data/uploads", os.ModePerm)
 	var err error
 	db, err = sql.Open("sqlite3", "./data/tickets.db")
 	if err != nil {
@@ -88,13 +91,13 @@ func initDB() {
 
 func main() {
 	if smtpHost == "" || smtpPort == 0 || smtpUser == "" || supportEmail == "" {
-		log.Println("ВНИМАНИЕ: Переменные среды для SMTP не заданы! Письма отправляться не будут.")
+		log.Println("ВНИМАНИЕ: Переменные среды для SMTP не заданы!")
 	} else {
 		log.Println("Конфигурация SMTP загружена успешно.")
 	}
 
 	if tgBotToken != "" {
-		log.Println("Запуск слушателя Telegram-бота для ответов...")
+		log.Println("Запуск слушателя Telegram-бота...")
 		go telegramBotListener()
 	}
 
@@ -103,6 +106,7 @@ func main() {
 
 	http.HandleFunc("/api/ticket", handleTicket)
 	http.HandleFunc("/api/history", handleHistory)
+	http.HandleFunc("/api/config", handleConfig)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -115,42 +119,65 @@ func main() {
 	}
 }
 
+func handleConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"cabinet_url": cabinetURL,
+	})
+}
+
 func handleTicket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error": "Method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req TicketRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendJSONError(w, "Неверный формат запроса", http.StatusBadRequest)
-		return
+	// Парсим multipart form (до 10 МБ)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		// Попробуем как обычный form
+		r.ParseForm()
 	}
 
-	req.Email = strings.TrimSpace(req.Email)
-	req.Message = strings.TrimSpace(req.Message)
-	req.TgUsername = strings.TrimSpace(req.TgUsername)
-	req.ClientID = strings.TrimSpace(req.ClientID)
+	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	tgUsername := strings.TrimSpace(r.FormValue("tg_username"))
+	message := strings.TrimSpace(r.FormValue("message"))
 
-	if req.Email == "" || req.Message == "" {
+	if email == "" || message == "" {
 		sendJSONError(w, "Email и Проблема обязательны для заполнения", http.StatusBadRequest)
 		return
 	}
-	if !strings.Contains(req.Email, "@") {
+	if !strings.Contains(email, "@") {
 		sendJSONError(w, "Введите корректный Email адрес", http.StatusBadRequest)
 		return
 	}
 
-	// Сохраняем тикет в БД (история)
-	if req.ClientID != "" {
-		saveMessage(req.ClientID, req.Email, "client", req.Message)
+	// Обработка загружаемого изображения
+	var imagePath string
+	var imageFilename string
+	file, header, err := r.FormFile("image")
+	if err == nil {
+		defer file.Close()
+		imageFilename = header.Filename
+		imagePath = fmt.Sprintf("./data/uploads/%d_%s", time.Now().Unix(), imageFilename)
+		dst, createErr := os.Create(imagePath)
+		if createErr == nil {
+			io.Copy(dst, file)
+			dst.Close()
+			log.Printf("Сохранено изображение: %s", imagePath)
+		}
+	}
+
+	// Сохраняем тикет в БД
+	if clientID != "" {
+		saveMessage(clientID, email, "client", message)
 	}
 
 	if smtpHost != "" {
-		go processEmails(req)
+		go processEmails(email, tgUsername, message, imagePath)
 	}
 	if tgBotToken != "" && tgChatID != "" {
-		go sendTelegramNotification(req)
+		go sendTelegramNotification(clientID, email, tgUsername, message, imagePath)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -199,26 +226,21 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-func processEmails(req TicketRequest) {
+func processEmails(email, tgUsername, message, imagePath string) {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
 	dialer.SSL = true
 
-	fromEmail := os.Getenv("SMTP_FROM")
-	if fromEmail == "" {
-		fromEmail = smtpUser
+	tgInfo := "Не указан"
+	if tgUsername != "" {
+		tgInfo = tgUsername
 	}
 
 	// Письмо Администратору
 	mAdmin := gomail.NewMessage()
-	mAdmin.SetHeader("From", mAdmin.FormatAddress(fromEmail, senderName))
+	mAdmin.SetHeader("From", mAdmin.FormatAddress(smtpFrom, senderName))
 	mAdmin.SetHeader("To", supportEmail)
-	mAdmin.SetHeader("Reply-To", req.Email)
-	mAdmin.SetHeader("Subject", "Новое обращение в поддержку от "+req.Email)
-	
-	tgInfo := "Не указан"
-	if req.TgUsername != "" {
-		tgInfo = req.TgUsername
-	}
+	mAdmin.SetHeader("Reply-To", email)
+	mAdmin.SetHeader("Subject", "Новое обращение в поддержку от "+email)
 
 	bodyAdmin := fmt.Sprintf(`
 		<h2>Новое обращение в службу поддержки</h2>
@@ -227,25 +249,31 @@ func processEmails(req TicketRequest) {
 		<hr>
 		<h3>Суть проблемы:</h3>
 		<p style="white-space: pre-wrap;">%s</p>
-	`, req.Email, tgInfo, req.Message)
+	`, email, tgInfo, message)
 
 	mAdmin.SetBody("text/html", bodyAdmin)
+	if imagePath != "" {
+		mAdmin.Attach(imagePath)
+	}
+
 	if err := dialer.DialAndSend(mAdmin); err != nil {
 		log.Printf("Ошибка отправки админу: %v\n", err)
 	}
 
 	// Автоответ Клиенту
 	mClient := gomail.NewMessage()
-	mClient.SetHeader("From", mClient.FormatAddress(fromEmail, senderName))
-	mClient.SetHeader("To", req.Email)
+	mClient.SetHeader("From", mClient.FormatAddress(smtpFrom, senderName))
+	mClient.SetHeader("To", email)
 	mClient.SetHeader("Subject", "Ваше обращение принято - "+senderName)
-	
+
 	bodyClient := fmt.Sprintf(`
 		<h2>Здравствуйте!</h2>
 		<p>Мы получили ваше обращение. Наш оператор рассмотрит его и ответит вам в ближайшее время.</p>
 		<hr>
 		<p><strong>Ваш текст обращения:</strong><br>%s</p>
-	`, req.Message)
+		<hr>
+		<p><small>С уважением, <strong>Поддержка KabebaVPN</strong></small></p>
+	`, message)
 
 	mClient.SetBody("text/html", bodyClient)
 	if err := dialer.DialAndSend(mClient); err != nil {
@@ -253,22 +281,48 @@ func processEmails(req TicketRequest) {
 	}
 }
 
-func sendTelegramNotification(req TicketRequest) {
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tgBotToken)
+func sendTelegramNotification(clientID, email, tgUsername, message, imagePath string) {
 	tgInfo := "Не указан"
-	if req.TgUsername != "" { tgInfo = req.TgUsername }
-
-	// Добавляем ID в текст, чтобы потом извлечь его при ответе
-	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nID: %s\nEmail: %s\nTG: %s\n\nПроблема:\n%s", 
-		req.ClientID, req.Email, tgInfo, req.Message)
-
-	payload := map[string]string{
-		"chat_id": tgChatID,
-		"text":    text,
+	if tgUsername != "" {
+		tgInfo = tgUsername
 	}
+	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nID: %s\nEmail: %s\nTG: %s\n\nПроблема:\n%s",
+		clientID, email, tgInfo, message)
 
-	jsonData, _ := json.Marshal(payload)
-	http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	if imagePath != "" {
+		// Отправляем изображение с подписью
+		sendTelegramPhoto(tgChatID, text, imagePath)
+	} else {
+		// Отправляем текстовое сообщение
+		apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tgBotToken)
+		payload := map[string]string{"chat_id": tgChatID, "text": text}
+		jsonData, _ := json.Marshal(payload)
+		http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	}
+}
+
+func sendTelegramPhoto(chatID, caption, filePath string) {
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendPhoto", tgBotToken)
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Printf("Не удалось открыть файл для TG: %v", err)
+		return
+	}
+	defer file.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	writer.WriteField("chat_id", chatID)
+	writer.WriteField("caption", caption)
+	part, _ := writer.CreateFormFile("photo", filePath)
+	io.Copy(part, file)
+	writer.Close()
+
+	req, _ := http.NewRequest("POST", apiURL, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	client := &http.Client{Timeout: 30 * time.Second}
+	client.Do(req)
 }
 
 func sendJSONError(w http.ResponseWriter, msg string, code int) {
@@ -282,7 +336,7 @@ func sendJSONError(w http.ResponseWriter, msg string, code int) {
 // -------------------------------------------------------------
 
 type TgUpdate struct {
-	UpdateID int       `json:"update_id"`
+	UpdateID int        `json:"update_id"`
 	Message  *TgMessage `json:"message"`
 }
 
@@ -305,8 +359,8 @@ type TgResponse struct {
 func telegramBotListener() {
 	offset := 0
 	client := &http.Client{Timeout: 35 * time.Second}
-	emailRegex := regexp.MustCompile(`Email:\s*([^\s]+)`)
-	idRegex := regexp.MustCompile(`ID:\s*([^\s]+)`)
+	emailRegex := regexp.MustCompile(`Email:\s*([^\s\n]+)`)
+	idRegex := regexp.MustCompile(`ID:\s*([^\s\n]+)`)
 
 	for {
 		url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=30", tgBotToken, offset)
@@ -325,39 +379,34 @@ func telegramBotListener() {
 					continue
 				}
 
-				// Проверяем, является ли оригинальное сообщение тикетом
 				originalText := update.Message.ReplyToMessage.Text
 				if !strings.Contains(originalText, "Новый тикет в поддержку") {
 					continue
 				}
 
-				// Извлекаем Email
 				matches := emailRegex.FindStringSubmatch(originalText)
 				if len(matches) < 2 {
-					sendTelegramMsg(update.Message.Chat.ID, "❌ Ошибка: не удалось найти Email клиента в оригинальном сообщении.")
+					sendTelegramMsg(update.Message.Chat.ID, "❌ Ошибка: не удалось найти Email клиента.")
 					continue
 				}
 				targetEmail := matches[1]
 				replyText := update.Message.Text
 
-				// Извлекаем Client ID (для сохранения в историю)
 				var clientID string
 				idMatches := idRegex.FindStringSubmatch(originalText)
 				if len(idMatches) >= 2 {
 					clientID = idMatches[1]
 				}
 
-				// Сохраняем ответ в базу
 				if clientID != "" {
 					saveMessage(clientID, targetEmail, "support", replyText)
 				}
 
-				// Отправляем письмо клиенту
 				err := sendReplyEmail(targetEmail, replyText)
 				if err != nil {
 					sendTelegramMsg(update.Message.Chat.ID, fmt.Sprintf("❌ Ошибка при отправке на почту %s: %v", targetEmail, err))
 				} else {
-					sendTelegramMsg(update.Message.Chat.ID, fmt.Sprintf("✅ Успешно! Ваш ответ сохранен в историю и отправлен клиенту на почту:\n%s", targetEmail))
+					sendTelegramMsg(update.Message.Chat.ID, fmt.Sprintf("✅ Ответ сохранён в историю и отправлен клиенту:\n%s", targetEmail))
 				}
 			}
 		}
@@ -369,13 +418,8 @@ func sendReplyEmail(toEmail, replyText string) error {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
 	dialer.SSL = true
 
-	fromEmail := os.Getenv("SMTP_FROM")
-	if fromEmail == "" {
-		fromEmail = smtpUser
-	}
-
 	m := gomail.NewMessage()
-	m.SetHeader("From", m.FormatAddress(fromEmail, senderName))
+	m.SetHeader("From", m.FormatAddress(smtpFrom, senderName))
 	m.SetHeader("To", toEmail)
 	m.SetHeader("Subject", "Re: Обращение в поддержку - "+senderName)
 
@@ -383,8 +427,8 @@ func sendReplyEmail(toEmail, replyText string) error {
 		<h2>Ответ от службы поддержки</h2>
 		<p style="white-space: pre-wrap; font-size: 16px;">%s</p>
 		<hr>
-		<p><small>С уважением,<br>%s</small></p>
-	`, replyText, senderName)
+		<p><small>С уважением,<br><strong>Поддержка KabebaVPN</strong></small></p>
+	`, replyText)
 
 	m.SetBody("text/html", body)
 	return dialer.DialAndSend(m)

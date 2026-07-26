@@ -16,95 +16,145 @@ function getClientID() {
 
 const clientId = getClientID();
 
-// Загрузка истории
+// ------------------------------------------------
+// Навигация между секциями
+// ------------------------------------------------
+function showForm(e) {
+    if (e) e.preventDefault();
+    document.getElementById('form-section').style.display = '';
+    document.getElementById('history-section').style.display = 'none';
+}
+
+function showHistory(e) {
+    if (e) e.preventDefault();
+    document.getElementById('form-section').style.display = 'none';
+    document.getElementById('history-section').style.display = '';
+    loadHistory();
+}
+
+// ------------------------------------------------
+// Загрузка конфига (cabinet_url)
+// ------------------------------------------------
+async function loadConfig() {
+    try {
+        const resp = await fetch('/api/config');
+        const cfg = await resp.json();
+        if (cfg.cabinet_url) {
+            const btn = document.getElementById('cabinet-btn');
+            btn.href = cfg.cabinet_url;
+            btn.style.opacity = '1';
+            btn.style.pointerEvents = 'auto';
+        }
+    } catch (e) {}
+}
+
+// ------------------------------------------------
+// История обращений
+// ------------------------------------------------
 async function loadHistory() {
     try {
         const response = await fetch(`/api/history?client_id=${clientId}`);
         const history = await response.json();
-        
-        if (history && history.length > 0) {
-            document.getElementById('history-section').style.display = 'block';
-            const historyList = document.getElementById('history-list');
-            historyList.innerHTML = '';
-            
-            history.forEach(msg => {
-                const card = document.createElement('div');
-                card.className = 'card';
-                card.style.padding = '16px';
-                
-                const title = document.createElement('h4');
-                title.style.marginBottom = '8px';
-                
-                if (msg.sender === 'client') {
-                    title.textContent = 'Вы написали:';
-                    title.style.color = '#3b82f6';
-                } else {
-                    title.textContent = 'Ответ поддержки:';
-                    title.style.color = '#10b981';
-                }
-                
-                const text = document.createElement('p');
-                text.className = 'text-body';
-                text.style.whiteSpace = 'pre-wrap';
-                text.textContent = msg.message;
-                
-                const time = document.createElement('small');
-                time.className = 'text-caption text-hollow';
-                time.style.display = 'block';
-                time.style.marginTop = '8px';
-                time.textContent = msg.created_at;
-                
-                card.appendChild(title);
-                card.appendChild(text);
-                card.appendChild(time);
-                historyList.appendChild(card);
-            });
+        const historyList = document.getElementById('history-list');
+        const emptyBox = document.getElementById('history-empty');
+
+        historyList.innerHTML = '';
+
+        if (!history || history.length === 0) {
+            emptyBox.style.display = 'block';
+            return;
         }
+
+        emptyBox.style.display = 'none';
+
+        history.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = `history-msg ${msg.sender}`;
+
+            const senderLabel = msg.sender === 'client' ? 'Вы написали:' : '✅ Ответ поддержки:';
+            const timeStr = msg.created_at ? msg.created_at.replace('T', ' ').replace('Z', '') : '';
+
+            div.innerHTML = `
+                <div class="history-sender ${msg.sender}">${senderLabel}</div>
+                <div style="white-space: pre-wrap; font-size: 14px; line-height: 1.6;">${escapeHtml(msg.message)}</div>
+                <div class="history-time">${timeStr}</div>
+            `;
+            historyList.appendChild(div);
+        });
+
+        // Прокручиваем вниз
+        historyList.scrollTop = historyList.scrollHeight;
     } catch (e) {
         console.error('Ошибка загрузки истории', e);
     }
 }
 
-// Загружаем при открытии
-loadHistory();
+function escapeHtml(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 
+// ------------------------------------------------
+// Превью загружаемого файла
+// ------------------------------------------------
+document.getElementById('image').addEventListener('change', function() {
+    const label = document.getElementById('file-label');
+    const labelText = document.getElementById('file-label-text');
+    if (this.files && this.files[0]) {
+        label.classList.add('has-file');
+        labelText.textContent = `✓ ${this.files[0].name}`;
+    } else {
+        label.classList.remove('has-file');
+        labelText.textContent = 'Нажмите, чтобы прикрепить изображение';
+    }
+});
+
+// ------------------------------------------------
+// Отправка формы
+// ------------------------------------------------
 document.getElementById('support-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
     const email = document.getElementById('email').value;
     const tg = document.getElementById('tg_username').value;
     const msg = document.getElementById('message').value;
+    const imageFile = document.getElementById('image').files[0];
     const submitBtn = document.getElementById('submit-btn');
     const alertBox = document.getElementById('form-alert');
-    
+
     submitBtn.disabled = true;
     submitBtn.textContent = 'Отправка...';
     alertBox.style.display = 'none';
-    
+
     try {
+        // Используем FormData для поддержки загрузки файлов
+        const formData = new FormData();
+        formData.append('client_id', clientId);
+        formData.append('email', email);
+        formData.append('tg_username', tg);
+        formData.append('message', msg);
+        if (imageFile) {
+            formData.append('image', imageFile);
+        }
+
         const response = await fetch('/api/ticket', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                client_id: clientId,
-                email: email,
-                tg_username: tg,
-                message: msg
-            })
+            body: formData
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
             alertBox.className = 'alert alert-success';
-            alertBox.textContent = 'Заявка успешно отправлена! Ответ придет на вашу почту.';
+            alertBox.textContent = '✅ Заявка отправлена! Ответ придёт на вашу почту.';
             alertBox.style.display = 'block';
             document.getElementById('message').value = '';
-            
-            // Перезагружаем историю
-            setTimeout(loadHistory, 1000);
+            document.getElementById('image').value = '';
+            document.getElementById('file-label').classList.remove('has-file');
+            document.getElementById('file-label-text').textContent = 'Нажмите, чтобы прикрепить изображение';
         } else {
             alertBox.className = 'alert alert-error';
             alertBox.textContent = data.error || 'Произошла ошибка при отправке';
@@ -119,3 +169,8 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
         submitBtn.textContent = 'Отправить заявку';
     }
 });
+
+// ------------------------------------------------
+// Инициализация
+// ------------------------------------------------
+loadConfig();
