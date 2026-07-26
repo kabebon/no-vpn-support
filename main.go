@@ -64,7 +64,7 @@ func init() {
 	tgChatID = os.Getenv("TG_CHAT_ID")
 
 	if senderName == "" {
-		senderName = "VPN Support"
+		senderName = "KabebaVPN Support"
 	}
 
 	initDB()
