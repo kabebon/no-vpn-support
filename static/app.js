@@ -39,23 +39,26 @@ async function loadConfig() {
     try {
         const resp = await fetch('/api/config', { cache: 'no-store' });
         const cfg = await resp.json();
-        const btn = document.getElementById('cabinet-btn');
-        if (cfg && cfg.cabinet_url && cfg.cabinet_url.trim() !== "") {
-            btn.href = cfg.cabinet_url.trim();
-            btn.style.opacity = '1';
-            btn.style.pointerEvents = 'auto';
-            btn.title = 'Перейти в личный кабинет';
-        } else {
-            // Если в .env не указано, делаем кнопку активной, но выводим предупреждение при клике
-            btn.style.opacity = '0.6';
-            btn.style.pointerEvents = 'auto';
-            btn.onclick = (e) => {
-                if (btn.getAttribute('href') === '#' || !btn.getAttribute('href')) {
-                    e.preventDefault();
-                    alert('Ссылка на кабинет ещё не настроена администратором (параметр CABINET_URL в .env)');
-                }
-            };
-        }
+        const btns = [document.getElementById('cabinet-btn'), document.getElementById('cabinet-btn-top')];
+        
+        btns.forEach(btn => {
+            if (!btn) return;
+            if (cfg && cfg.cabinet_url && cfg.cabinet_url.trim() !== "") {
+                btn.href = cfg.cabinet_url.trim();
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+                btn.title = 'Перейти в личный кабинет';
+            } else {
+                btn.style.opacity = '0.6';
+                btn.style.pointerEvents = 'auto';
+                btn.onclick = (e) => {
+                    if (btn.getAttribute('href') === '#' || !btn.getAttribute('href')) {
+                        e.preventDefault();
+                        alert('Ссылка на кабинет ещё не настроена администратором (параметр CABINET_URL в .env)');
+                    }
+                };
+            }
+        });
     } catch (e) {
         console.error('Ошибка загрузки конфига:', e);
     }

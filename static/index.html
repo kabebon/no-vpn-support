@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Служба поддержки KabebaVPN</title>
     <meta name="description" content="Служба поддержки KabebaVPN — оставьте обращение и получите ответ на Email">
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
     <style>
         .tip-box {
             background: rgba(59, 130, 246, 0.06);
@@ -57,9 +57,12 @@
 </head>
 <body>
     <div class="sidebar">
-        <div class="sidebar-header" style="display: flex; align-items: center; gap: 12px; padding-bottom: 20px;">
-            <img src="https://kabeba.my.id/logo.svg" alt="Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: contain;" onerror="this.src='logo.jpg'">
-            <h1 class="text-caption" style="font-weight: 600; margin: 0; line-height: 1.2;">KabebaVPN<br><span style="opacity: 0.6; font-size: 12px;">Support</span></h1>
+        <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <img src="https://kabeba.my.id/logo.svg" alt="Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: contain;" onerror="this.src='logo.jpg'">
+                <h1 class="text-caption" style="font-weight: 600; margin: 0; line-height: 1.2;">KabebaVPN<br><span style="opacity: 0.6; font-size: 12px;">Support</span></h1>
+            </div>
+            <a id="cabinet-btn-top" href="#" class="btn-primary mobile-only" style="padding: 8px 16px; font-size: 13px; opacity: 0.4; pointer-events: none;">В кабинет</a>
         </div>
         <nav class="sidebar-nav">
             <a href="#" class="sidebar-item" onclick="showForm(event)">
@@ -183,6 +186,6 @@
         </div>
     </main>
 
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
 </body>
 </html>
