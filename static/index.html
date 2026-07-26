@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Служба поддержки KabebaVPN</title>
     <meta name="description" content="Служба поддержки KabebaVPN — оставьте обращение и получите ответ на Email">
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=5">
     <style>
         .tip-box {
             background: rgba(59, 130, 246, 0.06);
@@ -53,6 +53,16 @@
         .history-sender.client { color: #3b82f6; }
         .history-sender.support { color: #10b981; }
         .history-time { font-size: 11px; color: #aaa; margin-top: 6px; }
+        .btn-copy-minimal {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: rgba(0, 0, 0, 0.04); color: #555;
+            border: 1px solid rgba(0, 0, 0, 0.09); border-radius: 6px;
+            padding: 4px 10px; font-size: 12px; font-weight: 500;
+            cursor: pointer; transition: all 0.15s ease; outline: none;
+            text-decoration: none;
+        }
+        .btn-copy-minimal:hover { background: rgba(0, 0, 0, 0.08); color: #111; border-color: rgba(0, 0, 0, 0.16); }
+        .btn-copy-minimal:active { transform: scale(0.97); }
     </style>
 </head>
 <body>
@@ -141,7 +151,10 @@
                             <input type="email" id="reg_email" name="reg_email" class="form-input" style="width: 100%; display: block;" placeholder="your-login@example.com">
                             <div style="margin-top: 6px; font-size: 13px; color: #6b7280; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
                                 <span>💡 <em>По этому адресу мы найдём вашу подписку в базе.</em></span>
-                                <button type="button" id="copy-email-btn" style="background: none; border: none; color: #2563eb; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0;">Скопировать из поля выше 👆</button>
+                                <button type="button" id="copy-email-btn" class="btn-copy-minimal" title="Скопировать Email из верхнего поля">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                    Скопировать из поля выше
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -186,6 +199,6 @@
         </div>
     </main>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
 </body>
 </html>
