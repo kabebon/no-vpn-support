@@ -1,6 +1,8 @@
 # Build stage
 FROM golang:1.22-alpine AS builder
 
+RUN apk add --no-cache gcc musl-dev
+
 WORKDIR /app
 
 # Настройка Go-модулей
@@ -10,8 +12,8 @@ RUN go mod download
 # Копируем исходный код
 COPY main.go ./
 
-# Собираем бинарник
-RUN CGO_ENABLED=0 GOOS=linux go build -o support-portal main.go
+# Собираем бинарник с поддержкой CGO для SQLite
+RUN CGO_ENABLED=1 GOOS=linux go build -o support-portal main.go
 
 # Production stage
 FROM alpine:latest
