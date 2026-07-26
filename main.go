@@ -132,18 +132,39 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Парсим multipart form (до 10 МБ)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		// Попробуем как обычный form
-		r.ParseForm()
+	// Универсальный парсер: поддерживает multipart/form-data, application/x-www-form-urlencoded и JSON
+	var clientID, email, tgUsername, message string
+
+	contentType := r.Header.Get("Content-Type")
+	if strings.Contains(contentType, "application/json") {
+		// JSON (старый клиент)
+		var jsonReq struct {
+			ClientID   string `json:"client_id"`
+			Email      string `json:"email"`
+			TgUsername string `json:"tg_username"`
+			Message    string `json:"message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&jsonReq); err != nil {
+			sendJSONError(w, "Неверный формат запроса", http.StatusBadRequest)
+			return
+		}
+		clientID = strings.TrimSpace(jsonReq.ClientID)
+		email = strings.TrimSpace(jsonReq.Email)
+		tgUsername = strings.TrimSpace(jsonReq.TgUsername)
+		message = strings.TrimSpace(jsonReq.Message)
+	} else {
+		// multipart/form-data или urlencoded
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			r.ParseForm()
+		}
+		clientID = strings.TrimSpace(r.FormValue("client_id"))
+		email = strings.TrimSpace(r.FormValue("email"))
+		tgUsername = strings.TrimSpace(r.FormValue("tg_username"))
+		message = strings.TrimSpace(r.FormValue("message"))
 	}
 
-	clientID := strings.TrimSpace(r.FormValue("client_id"))
-	email := strings.TrimSpace(r.FormValue("email"))
-	tgUsername := strings.TrimSpace(r.FormValue("tg_username"))
-	message := strings.TrimSpace(r.FormValue("message"))
-
 	if email == "" || message == "" {
+		log.Printf("Пустые поля: email=%q message=%q content-type=%q", email, message, contentType)
 		sendJSONError(w, "Email и Проблема обязательны для заполнения", http.StatusBadRequest)
 		return
 	}
