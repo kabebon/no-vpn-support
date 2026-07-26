@@ -98,19 +98,61 @@ function escapeHtml(text) {
 }
 
 // ------------------------------------------------
-// Превью загружаемого файла
+// Загрузка изображений — мультивыбор + превью
 // ------------------------------------------------
-document.getElementById('image').addEventListener('change', function() {
+let selectedFiles = []; // Массив файлов, которые будем отправлять
+
+document.getElementById('images').addEventListener('change', function() {
+    const newFiles = Array.from(this.files);
+    newFiles.forEach(file => {
+        if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+            selectedFiles.push(file);
+        }
+    });
+    // Сбрасываем input, чтобы можно было добавить ещё раз те же файлы
+    this.value = '';
+    renderPreviews();
+});
+
+function renderPreviews() {
+    const grid = document.getElementById('preview-grid');
     const label = document.getElementById('file-label');
     const labelText = document.getElementById('file-label-text');
-    if (this.files && this.files[0]) {
-        label.classList.add('has-file');
-        labelText.textContent = `✓ ${this.files[0].name}`;
-    } else {
+    grid.innerHTML = '';
+
+    if (selectedFiles.length === 0) {
         label.classList.remove('has-file');
-        labelText.textContent = 'Нажмите, чтобы прикрепить изображение';
+        labelText.textContent = 'Нажмите или перетащите изображения сюда';
+        return;
     }
-});
+
+    label.classList.add('has-file');
+    labelText.textContent = `Добавить ещё (выбрано: ${selectedFiles.length})`;
+
+    selectedFiles.forEach((file, index) => {
+        const item = document.createElement('div');
+        item.className = 'preview-item';
+
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.alt = file.name;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-btn';
+        removeBtn.type = 'button';
+        removeBtn.textContent = '×';
+        removeBtn.title = 'Удалить';
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectedFiles.splice(index, 1);
+            renderPreviews();
+        });
+
+        item.appendChild(img);
+        item.appendChild(removeBtn);
+        grid.appendChild(item);
+    });
+}
 
 // ------------------------------------------------
 // Отправка формы
@@ -121,7 +163,6 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
     const email = document.getElementById('email').value;
     const tg = document.getElementById('tg_username').value;
     const msg = document.getElementById('message').value;
-    const imageFile = document.getElementById('image').files[0];
     const submitBtn = document.getElementById('submit-btn');
     const alertBox = document.getElementById('form-alert');
 
@@ -130,15 +171,15 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
     alertBox.style.display = 'none';
 
     try {
-        // Используем FormData для поддержки загрузки файлов
         const formData = new FormData();
         formData.append('client_id', clientId);
         formData.append('email', email);
         formData.append('tg_username', tg);
         formData.append('message', msg);
-        if (imageFile) {
-            formData.append('image', imageFile);
-        }
+        // Добавляем все выбранные изображения
+        selectedFiles.forEach(file => {
+            formData.append('images', file);
+        });
 
         const response = await fetch('/api/ticket', {
             method: 'POST',
@@ -152,9 +193,9 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
             alertBox.textContent = '✅ Заявка отправлена! Ответ придёт на вашу почту.';
             alertBox.style.display = 'block';
             document.getElementById('message').value = '';
-            document.getElementById('image').value = '';
-            document.getElementById('file-label').classList.remove('has-file');
-            document.getElementById('file-label-text').textContent = 'Нажмите, чтобы прикрепить изображение';
+            // Сбрасываем файлы и превью
+            selectedFiles = [];
+            renderPreviews();
         } else {
             alertBox.className = 'alert alert-error';
             alertBox.textContent = data.error || 'Произошла ошибка при отправке';

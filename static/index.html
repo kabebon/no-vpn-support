@@ -32,6 +32,20 @@
         .file-input-wrapper:hover { border-color: rgba(0,0,0,0.3); background: rgba(0,0,0,0.02); }
         .file-input-wrapper.has-file { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.04); }
         .file-input-wrapper input[type="file"] { display: none; }
+        /* Превью загруженных изображений */
+        #preview-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+        .preview-item { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(0,0,0,0.1); flex-shrink: 0; }
+        .preview-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .preview-item .remove-btn {
+            position: absolute; top: 3px; right: 3px;
+            background: rgba(0,0,0,0.65); color: #fff;
+            border: none; border-radius: 50%;
+            width: 18px; height: 18px; font-size: 11px;
+            line-height: 18px; text-align: center;
+            cursor: pointer; padding: 0;
+            transition: background 0.2s;
+        }
+        .preview-item .remove-btn:hover { background: #ef4444; }
         .history-msg { padding: 14px 16px; border-radius: 10px; }
         .history-msg.client { background: #f8f8f8; border: 1px solid rgba(0,0,0,0.06); }
         .history-msg.support { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.15); }
@@ -105,14 +119,16 @@
                         <textarea id="message" name="message" class="form-textarea" placeholder="Пример: Подключаюсь через Happ на Android. Сверху появляется плашка «Connection timeout». Сам интернет работает. Проблема началась вчера, до этого всё работало. На домашнем интернете не работает, через мобильный — тоже." required></textarea>
                     </div>
 
-                    <!-- Загрузка изображения -->
+                    <!-- Загрузка изображений -->
                     <div class="form-group">
-                        <label class="form-label">Скриншот ошибки (необязательно)</label>
-                        <label class="file-input-wrapper" id="file-label" for="image">
-                            <input type="file" id="image" name="image" accept="image/*">
+                        <label class="form-label">Скриншоты ошибки (необязательно, можно несколько)</label>
+                        <label class="file-input-wrapper" id="file-label" for="images">
+                            <input type="file" id="images" name="images" accept="image/*" multiple>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 6px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                            <div id="file-label-text">Нажмите, чтобы прикрепить изображение</div>
+                            <div id="file-label-text">Нажмите или перетащите изображения сюда</div>
                         </label>
+                        <!-- Сетка превью -->
+                        <div id="preview-grid"></div>
                     </div>
 
                     <button type="submit" id="submit-btn" class="btn-primary">Отправить заявку</button>

@@ -173,19 +173,24 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Обработка загружаемого изображения
-	var imagePath string
-	var imageFilename string
-	file, header, err := r.FormFile("image")
-	if err == nil {
-		defer file.Close()
-		imageFilename = header.Filename
-		imagePath = fmt.Sprintf("./data/uploads/%d_%s", time.Now().Unix(), imageFilename)
-		dst, createErr := os.Create(imagePath)
-		if createErr == nil {
-			io.Copy(dst, file)
-			dst.Close()
-			log.Printf("Сохранено изображение: %s", imagePath)
+	// Обработка загружаемых изображений (множественные)
+	var imagePaths []string
+	if r.MultipartForm != nil {
+		fileHeaders := r.MultipartForm.File["images"]
+		for _, fileHeader := range fileHeaders {
+			file, openErr := fileHeader.Open()
+			if openErr != nil {
+				continue
+			}
+			savePath := fmt.Sprintf("./data/uploads/%d_%s", time.Now().UnixNano(), fileHeader.Filename)
+			dst, createErr := os.Create(savePath)
+			if createErr == nil {
+				io.Copy(dst, file)
+				dst.Close()
+				imagePaths = append(imagePaths, savePath)
+				log.Printf("Сохранено изображение: %s", savePath)
+			}
+			file.Close()
 		}
 	}
 
@@ -195,10 +200,10 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if smtpHost != "" {
-		go processEmails(email, tgUsername, message, imagePath)
+		go processEmails(email, tgUsername, message, imagePaths)
 	}
 	if tgBotToken != "" && tgChatID != "" {
-		go sendTelegramNotification(clientID, email, tgUsername, message, imagePath)
+		go sendTelegramNotification(clientID, email, tgUsername, message, imagePaths)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -247,7 +252,7 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-func processEmails(email, tgUsername, message, imagePath string) {
+func processEmails(email, tgUsername, message string, imagePaths []string) {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
 	dialer.SSL = true
 
@@ -273,8 +278,8 @@ func processEmails(email, tgUsername, message, imagePath string) {
 	`, email, tgInfo, message)
 
 	mAdmin.SetBody("text/html", bodyAdmin)
-	if imagePath != "" {
-		mAdmin.Attach(imagePath)
+	for _, p := range imagePaths {
+		mAdmin.Attach(p)
 	}
 
 	if err := dialer.DialAndSend(mAdmin); err != nil {
@@ -302,7 +307,7 @@ func processEmails(email, tgUsername, message, imagePath string) {
 	}
 }
 
-func sendTelegramNotification(clientID, email, tgUsername, message, imagePath string) {
+func sendTelegramNotification(clientID, email, tgUsername, message string, imagePaths []string) {
 	tgInfo := "Не указан"
 	if tgUsername != "" {
 		tgInfo = tgUsername
@@ -310,11 +315,14 @@ func sendTelegramNotification(clientID, email, tgUsername, message, imagePath st
 	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nID: %s\nEmail: %s\nTG: %s\n\nПроблема:\n%s",
 		clientID, email, tgInfo, message)
 
-	if imagePath != "" {
-		// Отправляем изображение с подписью
-		sendTelegramPhoto(tgChatID, text, imagePath)
+	if len(imagePaths) > 0 {
+		// Первое фото отправляем с подписью
+		sendTelegramPhoto(tgChatID, text, imagePaths[0])
+		// Остальные без подписи
+		for _, p := range imagePaths[1:] {
+			sendTelegramPhoto(tgChatID, "", p)
+		}
 	} else {
-		// Отправляем текстовое сообщение
 		apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tgBotToken)
 		payload := map[string]string{"chat_id": tgChatID, "text": text}
 		jsonData, _ := json.Marshal(payload)
