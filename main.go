@@ -5,14 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -38,6 +41,10 @@ var (
 	tgChatID     string
 	cabinetURL   string
 	db           *sql.DB
+
+	// Ограничение частоты запросов (Rate Limiter)
+	rateLimitMap = make(map[string]time.Time)
+	rateLimitMu  sync.Mutex
 )
 
 func init() {
@@ -87,6 +94,7 @@ func initDB() {
 	if _, err := db.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы: %v", err)
 	}
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_client_id ON tickets(client_id);")
 }
 
 func main() {
@@ -121,14 +129,36 @@ func main() {
 
 func handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	json.NewEncoder(w).Encode(map[string]string{
-		"cabinet_url": cabinetURL,
+		"cabinet_url": strings.TrimSpace(cabinetURL),
 	})
+}
+
+func checkRateLimit(ip string) bool {
+	rateLimitMu.Lock()
+	defer rateLimitMu.Unlock()
+	lastSeen, exists := rateLimitMap[ip]
+	if exists && time.Since(lastSeen) < 15*time.Second {
+		return false
+	}
+	rateLimitMap[ip] = time.Now()
+	return true
 }
 
 func handleTicket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error": "Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Защита от DoS и спам-флуда
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP = strings.Split(r.RemoteAddr, ":")[0]
+	}
+	if !checkRateLimit(clientIP) {
+		sendJSONError(w, "Слишком частое создание обращений. Подождите 15 секунд.", http.StatusTooManyRequests)
 		return
 	}
 
@@ -173,7 +203,7 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Обработка загружаемых изображений (множественные)
+	// Обработка загружаемых изображений (максимум 5, защита от Directory Traversal и исполняемых файлов)
 	var imagePaths []string
 	if r.MultipartForm != nil && r.MultipartForm.File != nil {
 		fileHeaders := r.MultipartForm.File["images"]
@@ -184,18 +214,33 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 			fileHeaders = r.MultipartForm.File["image"]
 		}
 
+		validExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true}
+		count := 0
+
 		for _, fileHeader := range fileHeaders {
+			if count >= 5 {
+				log.Println("Превышен лимит (5 изображений), остальные отброшены")
+				break
+			}
+			cleanName := filepath.Base(fileHeader.Filename)
+			ext := strings.ToLower(filepath.Ext(cleanName))
+			if !validExts[ext] {
+				log.Printf("⚠️ Отклонен файл с неразрешенным расширением: %s", cleanName)
+				continue
+			}
+
 			file, openErr := fileHeader.Open()
 			if openErr != nil {
 				log.Printf("Ошибка открытия файла из формы: %v", openErr)
 				continue
 			}
-			savePath := fmt.Sprintf("./data/uploads/%d_%s", time.Now().UnixNano(), fileHeader.Filename)
+			savePath := fmt.Sprintf("./data/uploads/%d_%d%s", time.Now().UnixNano(), count, ext)
 			dst, createErr := os.Create(savePath)
 			if createErr == nil {
 				io.Copy(dst, file)
 				dst.Close()
 				imagePaths = append(imagePaths, savePath)
+				count++
 				log.Printf("Сохранено изображение: %s", savePath)
 			} else {
 				log.Printf("Ошибка сохранения файла на диск: %v", createErr)
@@ -278,6 +323,10 @@ func processEmails(email, tgUsername, message string, imagePaths []string) {
 	mAdmin.SetHeader("Reply-To", email)
 	mAdmin.SetHeader("Subject", "Новое обращение в поддержку от "+email)
 
+	safeEmail := html.EscapeString(email)
+	safeTgInfo := html.EscapeString(tgInfo)
+	safeMessage := html.EscapeString(message)
+
 	bodyAdmin := fmt.Sprintf(`
 		<h2>Новое обращение в службу поддержки</h2>
 		<p><strong>Email клиента:</strong> %s</p>
@@ -285,7 +334,7 @@ func processEmails(email, tgUsername, message string, imagePaths []string) {
 		<hr>
 		<h3>Суть проблемы:</h3>
 		<p style="white-space: pre-wrap;">%s</p>
-	`, email, tgInfo, message)
+	`, safeEmail, safeTgInfo, safeMessage)
 
 	mAdmin.SetBody("text/html", bodyAdmin)
 	for _, p := range imagePaths {
@@ -309,7 +358,7 @@ func processEmails(email, tgUsername, message string, imagePaths []string) {
 		<p><strong>Ваш текст обращения:</strong><br>%s</p>
 		<hr>
 		<p><small>С уважением, <strong>Поддержка KabebaVPN</strong></small></p>
-	`, message)
+	`, safeMessage)
 
 	mClient.SetBody("text/html", bodyClient)
 	if err := dialer.DialAndSend(mClient); err != nil {
@@ -418,6 +467,12 @@ func telegramBotListener() {
 					continue
 				}
 
+				// 🚨 ЗАЩИТА: проверяем, что отвечает именно авторизованный администратор (TG_CHAT_ID)
+				if strconv.FormatInt(update.Message.Chat.ID, 10) != tgChatID {
+					log.Printf("🚨 Предупреждение о безопасности: попытка ответа из чужого чата (ID: %d)", update.Message.Chat.ID)
+					continue
+				}
+
 				originalText := update.Message.ReplyToMessage.Text
 				if !strings.Contains(originalText, "Новый тикет в поддержку") {
 					continue
@@ -462,12 +517,13 @@ func sendReplyEmail(toEmail, replyText string) error {
 	m.SetHeader("To", toEmail)
 	m.SetHeader("Subject", "Re: Обращение в поддержку - "+senderName)
 
+	safeReply := html.EscapeString(replyText)
 	body := fmt.Sprintf(`
 		<h2>Ответ от службы поддержки</h2>
 		<p style="white-space: pre-wrap; font-size: 16px;">%s</p>
 		<hr>
 		<p><small>С уважением,<br><strong>Поддержка KabebaVPN</strong></small></p>
-	`, replyText)
+	`, safeReply)
 
 	m.SetBody("text/html", body)
 	return dialer.DialAndSend(m)

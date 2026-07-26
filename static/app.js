@@ -37,15 +37,28 @@ function showHistory(e) {
 // ------------------------------------------------
 async function loadConfig() {
     try {
-        const resp = await fetch('/api/config');
+        const resp = await fetch('/api/config', { cache: 'no-store' });
         const cfg = await resp.json();
-        if (cfg.cabinet_url) {
-            const btn = document.getElementById('cabinet-btn');
-            btn.href = cfg.cabinet_url;
+        const btn = document.getElementById('cabinet-btn');
+        if (cfg && cfg.cabinet_url && cfg.cabinet_url.trim() !== "") {
+            btn.href = cfg.cabinet_url.trim();
             btn.style.opacity = '1';
             btn.style.pointerEvents = 'auto';
+            btn.title = 'Перейти в личный кабинет';
+        } else {
+            // Если в .env не указано, делаем кнопку активной, но выводим предупреждение при клике
+            btn.style.opacity = '0.6';
+            btn.style.pointerEvents = 'auto';
+            btn.onclick = (e) => {
+                if (btn.getAttribute('href') === '#' || !btn.getAttribute('href')) {
+                    e.preventDefault();
+                    alert('Ссылка на кабинет ещё не настроена администратором (параметр CABINET_URL в .env)');
+                }
+            };
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error('Ошибка загрузки конфига:', e);
+    }
 }
 
 // ------------------------------------------------
@@ -106,13 +119,16 @@ const fileInput = document.getElementById('images');
 const fileLabel = document.getElementById('file-label');
 
 function addFiles(files) {
-    Array.from(files).forEach(file => {
-        if (file.type.startsWith('image/')) {
-            if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
-                selectedFiles.push(file);
+    const newImgs = Array.from(files).filter(file => file.type.startsWith('image/'));
+    for (let file of newImgs) {
+        if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+            if (selectedFiles.length >= 5) {
+                alert('⚠️ Можно прикрепить максимум 5 скриншотов.');
+                break;
             }
+            selectedFiles.push(file);
         }
-    });
+    }
     renderPreviews();
 }
 
@@ -160,7 +176,11 @@ function renderPreviews() {
     }
 
     fileLabel.classList.add('has-file');
-    labelText.textContent = `Добавить ещё (выбрано скриншотов: ${selectedFiles.length})`;
+    if (selectedFiles.length >= 5) {
+        labelText.textContent = `Достигнут лимит (5 из 5 скриншотов)`;
+    } else {
+        labelText.textContent = `Добавить ещё (выбрано: ${selectedFiles.length} из 5)`;
+    }
 
     selectedFiles.forEach((file, index) => {
         const item = document.createElement('div');
@@ -231,6 +251,7 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
             alertBox.textContent = '✅ Заявка отправлена! Ответ придёт на вашу почту.';
             alertBox.style.display = 'block';
             document.getElementById('message').value = '';
+            clearSavedMessage(); // Очищаем сохраненное сообщение после успешной отправки
             // Сбрасываем файлы и превью
             selectedFiles = [];
             renderPreviews();
@@ -250,6 +271,49 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
 });
 
 // ------------------------------------------------
+// Автосохранение введенных данных (защита от сброса при обновлении)
+// ------------------------------------------------
+const STORAGE_FORM_KEY = 'kabeba_support_form_save';
+
+function setupAutoSave() {
+    const fields = ['email', 'tg_username', 'message'];
+    try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_FORM_KEY) || '{}');
+        fields.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && saved[id]) {
+                el.value = saved[id];
+            }
+        });
+    } catch (e) {}
+
+    fields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => {
+                try {
+                    const currentData = {
+                        email: document.getElementById('email').value,
+                        tg_username: document.getElementById('tg_username').value,
+                        message: document.getElementById('message').value
+                    };
+                    localStorage.setItem(STORAGE_FORM_KEY, JSON.stringify(currentData));
+                } catch (e) {}
+            });
+        }
+    });
+}
+
+function clearSavedMessage() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_FORM_KEY) || '{}');
+        delete saved.message; // Оставляем email и tg_username для удобства пользователя
+        localStorage.setItem(STORAGE_FORM_KEY, JSON.stringify(saved));
+    } catch (e) {}
+}
+
+// ------------------------------------------------
 // Инициализация
 // ------------------------------------------------
 loadConfig();
+setupAutoSave();
