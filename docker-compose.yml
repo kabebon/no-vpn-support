@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  support-portal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_portal
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - GIN_MODE=release # Если в будущем перейдете на Gin
