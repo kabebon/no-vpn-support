@@ -225,30 +225,30 @@ function initRegistrationSelector() {
 
     function updateView(selectedVal) {
         if (selectedVal === 'telegram') {
-            if (fieldTg) fieldTg.style.display = 'block';
+            if (fieldTg) fieldTg.style.display = 'flex';
             if (fieldEmail) fieldEmail.style.display = 'none';
             if (cardTg) {
                 cardTg.style.background = 'rgba(59, 130, 246, 0.08)';
                 cardTg.style.borderColor = '#3b82f6';
-                cardTg.querySelector('span').style.color = '#1d4ed8';
+                if (cardTg.querySelector('span')) cardTg.querySelector('span').style.color = '#1d4ed8';
             }
             if (cardEmail) {
                 cardEmail.style.background = 'rgba(0, 0, 0, 0.02)';
-                cardEmail.style.borderColor = 'rgba(0, 0, 0, 0.1)';
-                cardEmail.querySelector('span').style.color = '#555';
+                cardEmail.style.borderColor = 'rgba(0, 0, 0, 0.12)';
+                if (cardEmail.querySelector('span')) cardEmail.querySelector('span').style.color = '#555';
             }
         } else {
             if (fieldTg) fieldTg.style.display = 'none';
-            if (fieldEmail) fieldEmail.style.display = 'block';
+            if (fieldEmail) fieldEmail.style.display = 'flex';
             if (cardEmail) {
                 cardEmail.style.background = 'rgba(59, 130, 246, 0.08)';
                 cardEmail.style.borderColor = '#3b82f6';
-                cardEmail.querySelector('span').style.color = '#1d4ed8';
+                if (cardEmail.querySelector('span')) cardEmail.querySelector('span').style.color = '#1d4ed8';
             }
             if (cardTg) {
                 cardTg.style.background = 'rgba(0, 0, 0, 0.02)';
-                cardTg.style.borderColor = 'rgba(0, 0, 0, 0.1)';
-                cardTg.querySelector('span').style.color = '#555';
+                cardTg.style.borderColor = 'rgba(0, 0, 0, 0.12)';
+                if (cardTg.querySelector('span')) cardTg.querySelector('span').style.color = '#555';
             }
         }
     }
@@ -260,6 +260,28 @@ function initRegistrationSelector() {
         });
     });
 
+    if (cardTg) {
+        cardTg.addEventListener('click', (e) => {
+            const radio = document.querySelector('input[name="reg_type"][value="telegram"]');
+            if (radio && !radio.checked) {
+                radio.checked = true;
+                updateView('telegram');
+                saveCurrentForm();
+            }
+        });
+    }
+
+    if (cardEmail) {
+        cardEmail.addEventListener('click', (e) => {
+            const radio = document.querySelector('input[name="reg_type"][value="email"]');
+            if (radio && !radio.checked) {
+                radio.checked = true;
+                updateView('email');
+                saveCurrentForm();
+            }
+        });
+    }
+
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
             const mainEmail = document.getElementById('email').value;
@@ -268,13 +290,17 @@ function initRegistrationSelector() {
                 regEmailInput.value = mainEmail;
                 saveCurrentForm();
             } else {
-                alert('Сначала укажите ваш основной Email для получения ответа выше 👆');
+                alert('Сначала укажите ваш основной Email для получения ответа в поле выше 👆');
             }
         });
     }
 
     const checked = document.querySelector('input[name="reg_type"]:checked');
-    if (checked) updateView(checked.value);
+    if (checked) {
+        updateView(checked.value);
+    } else {
+        updateView('telegram');
+    }
 }
 
 // ------------------------------------------------
