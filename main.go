@@ -154,7 +154,7 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 		message = strings.TrimSpace(jsonReq.Message)
 	} else {
 		// multipart/form-data или urlencoded
-		if err := r.ParseMultipartForm(10 << 20); err != nil {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			r.ParseForm()
 		}
 		clientID = strings.TrimSpace(r.FormValue("client_id"))
@@ -175,11 +175,19 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 
 	// Обработка загружаемых изображений (множественные)
 	var imagePaths []string
-	if r.MultipartForm != nil {
+	if r.MultipartForm != nil && r.MultipartForm.File != nil {
 		fileHeaders := r.MultipartForm.File["images"]
+		if len(fileHeaders) == 0 {
+			fileHeaders = r.MultipartForm.File["images[]"]
+		}
+		if len(fileHeaders) == 0 {
+			fileHeaders = r.MultipartForm.File["image"]
+		}
+
 		for _, fileHeader := range fileHeaders {
 			file, openErr := fileHeader.Open()
 			if openErr != nil {
+				log.Printf("Ошибка открытия файла из формы: %v", openErr)
 				continue
 			}
 			savePath := fmt.Sprintf("./data/uploads/%d_%s", time.Now().UnixNano(), fileHeader.Filename)
@@ -189,6 +197,8 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 				dst.Close()
 				imagePaths = append(imagePaths, savePath)
 				log.Printf("Сохранено изображение: %s", savePath)
+			} else {
+				log.Printf("Ошибка сохранения файла на диск: %v", createErr)
 			}
 			file.Close()
 		}

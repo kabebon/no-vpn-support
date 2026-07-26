@@ -98,52 +98,90 @@ function escapeHtml(text) {
 }
 
 // ------------------------------------------------
-// Загрузка изображений — мультивыбор + превью
+// Загрузка изображений — мультивыбор + превью + Drag&Drop
 // ------------------------------------------------
-let selectedFiles = []; // Массив файлов, которые будем отправлять
+let selectedFiles = []; // Массив файлов для отправки
 
-document.getElementById('images').addEventListener('change', function() {
-    const newFiles = Array.from(this.files);
-    newFiles.forEach(file => {
-        if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
-            selectedFiles.push(file);
+const fileInput = document.getElementById('images');
+const fileLabel = document.getElementById('file-label');
+
+function addFiles(files) {
+    Array.from(files).forEach(file => {
+        if (file.type.startsWith('image/')) {
+            if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+                selectedFiles.push(file);
+            }
         }
     });
-    // Сбрасываем input, чтобы можно было добавить ещё раз те же файлы
-    this.value = '';
     renderPreviews();
+}
+
+fileInput.addEventListener('change', function() {
+    if (this.files && this.files.length > 0) {
+        addFiles(this.files);
+    }
+});
+
+// Drag & Drop
+['dragenter', 'dragover'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileLabel.style.borderColor = '#10b981';
+        fileLabel.style.background = 'rgba(16,185,129,0.08)';
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    fileLabel.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileLabel.style.borderColor = '';
+        fileLabel.style.background = '';
+    }, false);
+});
+
+fileLabel.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length > 0) {
+        addFiles(dt.files);
+    }
 });
 
 function renderPreviews() {
     const grid = document.getElementById('preview-grid');
-    const label = document.getElementById('file-label');
     const labelText = document.getElementById('file-label-text');
     grid.innerHTML = '';
 
     if (selectedFiles.length === 0) {
-        label.classList.remove('has-file');
+        fileLabel.classList.remove('has-file');
         labelText.textContent = 'Нажмите или перетащите изображения сюда';
         return;
     }
 
-    label.classList.add('has-file');
-    labelText.textContent = `Добавить ещё (выбрано: ${selectedFiles.length})`;
+    fileLabel.classList.add('has-file');
+    labelText.textContent = `Добавить ещё (выбрано скриншотов: ${selectedFiles.length})`;
 
     selectedFiles.forEach((file, index) => {
         const item = document.createElement('div');
         item.className = 'preview-item';
 
         const img = document.createElement('img');
-        img.src = URL.createObjectURL(file);
-        img.alt = file.name;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
 
         const removeBtn = document.createElement('button');
         removeBtn.className = 'remove-btn';
         removeBtn.type = 'button';
         removeBtn.textContent = '×';
-        removeBtn.title = 'Удалить';
+        removeBtn.title = 'Удалить изображение';
         removeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            e.preventDefault();
             selectedFiles.splice(index, 1);
             renderPreviews();
         });
