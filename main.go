@@ -71,6 +71,7 @@ func init() {
 }
 
 func initDB() {
+	os.MkdirAll("./data", os.ModePerm)
 	var err error
 	db, err = sql.Open("sqlite3", "./data/chat.db")
 	if err != nil {
@@ -94,8 +95,6 @@ func initDB() {
 }
 
 func main() {
-	os.MkdirAll("./data", os.ModePerm)
-
 	if tgBotToken != "" {
 		go telegramBotListener()
 	}
