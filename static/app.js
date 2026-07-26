@@ -213,34 +213,68 @@ function renderPreviews() {
 }
 
 // ------------------------------------------------
-// Переключатель "Нет логина @username / Ник скрыт"
+// Селектор способа регистрации (Telegram / Email)
 // ------------------------------------------------
-function initNoTgToggle() {
-    const cb = document.getElementById('no-tg-checkbox');
-    const tip = document.getElementById('no-tg-tip');
-    const input = document.getElementById('tg_username');
-    const label = document.getElementById('tg-label');
-    
-    if (!cb || !tip || !input || !label) return;
+function initRegistrationSelector() {
+    const radios = document.querySelectorAll('input[name="reg_type"]');
+    const fieldTg = document.getElementById('field-telegram');
+    const fieldEmail = document.getElementById('field-email-reg');
+    const cardTg = document.getElementById('card-reg-tg');
+    const cardEmail = document.getElementById('card-reg-email');
+    const copyBtn = document.getElementById('copy-email-btn');
 
-    function updateState() {
-        if (cb.checked) {
-            tip.style.display = 'block';
-            label.textContent = 'Альтернативный ID (Telegram ID, Email или ключ)';
-            input.placeholder = '123456789 или email оплаты';
+    function updateView(selectedVal) {
+        if (selectedVal === 'telegram') {
+            if (fieldTg) fieldTg.style.display = 'block';
+            if (fieldEmail) fieldEmail.style.display = 'none';
+            if (cardTg) {
+                cardTg.style.background = 'rgba(59, 130, 246, 0.08)';
+                cardTg.style.borderColor = '#3b82f6';
+                cardTg.querySelector('span').style.color = '#1d4ed8';
+            }
+            if (cardEmail) {
+                cardEmail.style.background = 'rgba(0, 0, 0, 0.02)';
+                cardEmail.style.borderColor = 'rgba(0, 0, 0, 0.1)';
+                cardEmail.querySelector('span').style.color = '#555';
+            }
         } else {
-            tip.style.display = 'none';
-            label.textContent = 'Логин в Telegram или Кабинете (для поиска подписки)';
-            input.placeholder = '@username';
+            if (fieldTg) fieldTg.style.display = 'none';
+            if (fieldEmail) fieldEmail.style.display = 'block';
+            if (cardEmail) {
+                cardEmail.style.background = 'rgba(59, 130, 246, 0.08)';
+                cardEmail.style.borderColor = '#3b82f6';
+                cardEmail.querySelector('span').style.color = '#1d4ed8';
+            }
+            if (cardTg) {
+                cardTg.style.background = 'rgba(0, 0, 0, 0.02)';
+                cardTg.style.borderColor = 'rgba(0, 0, 0, 0.1)';
+                cardTg.querySelector('span').style.color = '#555';
+            }
         }
     }
 
-    cb.addEventListener('change', () => {
-        updateState();
-        saveCurrentForm();
+    radios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            updateView(e.target.value);
+            saveCurrentForm();
+        });
     });
 
-    updateState();
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            const mainEmail = document.getElementById('email').value;
+            const regEmailInput = document.getElementById('reg_email');
+            if (mainEmail && regEmailInput) {
+                regEmailInput.value = mainEmail;
+                saveCurrentForm();
+            } else {
+                alert('Сначала укажите ваш основной Email для получения ответа выше 👆');
+            }
+        });
+    }
+
+    const checked = document.querySelector('input[name="reg_type"]:checked');
+    if (checked) updateView(checked.value);
 }
 
 // ------------------------------------------------
@@ -250,10 +284,22 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
     e.preventDefault();
 
     const email = document.getElementById('email').value;
-    const tg = document.getElementById('tg_username').value;
     const msg = document.getElementById('message').value;
     const submitBtn = document.getElementById('submit-btn');
     const alertBox = document.getElementById('form-alert');
+
+    // Определяем данные аккаунта в зависимости от выбранного способа регистрации
+    const regTypeEl = document.querySelector('input[name="reg_type"]:checked');
+    const regType = regTypeEl ? regTypeEl.value : 'telegram';
+    let accountInfo = '';
+
+    if (regType === 'telegram') {
+        const tgVal = document.getElementById('tg_username').value.trim();
+        accountInfo = tgVal ? `[Регистрация в Telegram]: ${tgVal}` : '[Telegram: не указан / скрыт]';
+    } else {
+        const regEmailVal = document.getElementById('reg_email').value.trim();
+        accountInfo = regEmailVal ? `[Регистрация по Email]: ${regEmailVal}` : `[Регистрация по Email]: ${email}`;
+    }
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Отправка...';
@@ -263,19 +309,7 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
         const formData = new FormData();
         formData.append('client_id', clientId);
         formData.append('email', email);
-        
-        // Обработка случая, когда нет Telegram логина
-        let tgVal = tg.trim();
-        const noTgCb = document.getElementById('no-tg-checkbox');
-        if (noTgCb && noTgCb.checked) {
-            if (tgVal === '') {
-                tgVal = '[Нет TG / Ник скрыт]';
-            } else if (!tgVal.includes('[Без TG')) {
-                tgVal = '[Без TG / Альтернативный ID]: ' + tgVal;
-            }
-        }
-        formData.append('tg_username', tgVal);
-        
+        formData.append('tg_username', accountInfo);
         formData.append('message', msg);
         // Добавляем все выбранные изображения
         selectedFiles.forEach(file => {
@@ -314,36 +348,37 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
 });
 
 // ------------------------------------------------
-// Автосохранение введенных данных (защита от сброса при обновлении)
+// Автосохранение введенных данных
 // ------------------------------------------------
 const STORAGE_FORM_KEY = 'kabeba_support_form_save';
 
 function saveCurrentForm() {
     try {
-        const cb = document.getElementById('no-tg-checkbox');
+        const checkedReg = document.querySelector('input[name="reg_type"]:checked');
         const currentData = {
-            email: document.getElementById('email').value,
-            tg_username: document.getElementById('tg_username').value,
-            message: document.getElementById('message').value,
-            no_tg: cb ? cb.checked : false
+            email: document.getElementById('email') ? document.getElementById('email').value : '',
+            tg_username: document.getElementById('tg_username') ? document.getElementById('tg_username').value : '',
+            reg_email: document.getElementById('reg_email') ? document.getElementById('reg_email').value : '',
+            message: document.getElementById('message') ? document.getElementById('message').value : '',
+            reg_type: checkedReg ? checkedReg.value : 'telegram'
         };
         localStorage.setItem(STORAGE_FORM_KEY, JSON.stringify(currentData));
     } catch (e) {}
 }
 
 function setupAutoSave() {
-    const fields = ['email', 'tg_username', 'message'];
+    const fields = ['email', 'tg_username', 'reg_email', 'message'];
     try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_FORM_KEY) || '{}');
         fields.forEach(id => {
             const el = document.getElementById(id);
-            if (el && saved[id]) {
+            if (el && saved[id] !== undefined) {
                 el.value = saved[id];
             }
         });
-        const cb = document.getElementById('no-tg-checkbox');
-        if (cb && saved.no_tg !== undefined) {
-            cb.checked = saved.no_tg;
+        if (saved.reg_type) {
+            const radio = document.querySelector(`input[name="reg_type"][value="${saved.reg_type}"]`);
+            if (radio) radio.checked = true;
         }
     } catch (e) {}
 
@@ -358,7 +393,7 @@ function setupAutoSave() {
 function clearSavedMessage() {
     try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_FORM_KEY) || '{}');
-        delete saved.message; // Оставляем email, tg_username и чекбокс для удобства
+        delete saved.message; // Оставляем контактные данные и выбор типа регистрации
         localStorage.setItem(STORAGE_FORM_KEY, JSON.stringify(saved));
     } catch (e) {}
 }
@@ -368,4 +403,4 @@ function clearSavedMessage() {
 // ------------------------------------------------
 loadConfig();
 setupAutoSave();
-initNoTgToggle();
+initRegistrationSelector();

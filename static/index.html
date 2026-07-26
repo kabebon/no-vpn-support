@@ -110,22 +110,36 @@
                     </div>
 
                     <div class="form-group">
-                        <label id="tg-label" for="tg_username" class="form-label">Логин в Telegram или Кабинете (для поиска подписки)</label>
-                        <input type="text" id="tg_username" name="tg_username" class="form-input" placeholder="@username">
+                        <label class="form-label" style="margin-bottom: 8px; display: block; font-weight: 600;">Где вы регистрировались / оформляли подписку?</label>
                         
-                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="no-tg-checkbox" style="width: 16px; height: 16px; cursor: pointer;">
-                            <label for="no-tg-checkbox" class="text-caption text-hollow" style="cursor: pointer; user-select: none;">У меня нет логина @username / Ник скрыт</label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+                            <label id="card-reg-tg" class="reg-type-card" style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: rgba(59, 130, 246, 0.08); border: 2px solid #3b82f6; border-radius: 10px; padding: 10px 14px; flex: 1; min-width: 180px; transition: 0.2s;">
+                                <input type="radio" name="reg_type" value="telegram" checked style="width: 16px; height: 16px; cursor: pointer;">
+                                <span style="font-weight: 500; font-size: 14px; color: #1d4ed8;">Внутри Telegram / Бота</span>
+                            </label>
+                            <label id="card-reg-email" class="reg-type-card" style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: rgba(0, 0, 0, 0.02); border: 2px solid rgba(0, 0, 0, 0.1); border-radius: 10px; padding: 10px 14px; flex: 1; min-width: 180px; transition: 0.2s;">
+                                <input type="radio" name="reg_type" value="email" style="width: 16px; height: 16px; cursor: pointer;">
+                                <span style="font-weight: 500; font-size: 14px; color: #555;">На сайте / по Email</span>
+                            </label>
                         </div>
 
-                        <div id="no-tg-tip" style="display: none; margin-top: 10px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px; font-size: 13px; color: #78350f; line-height: 1.5;">
-                            <strong>💡 Как нам найти вашу подписку без @username?</strong><br>
-                            Укажите в поле выше или прямо в описании проблемы любой идентификатор:
-                            <ul style="margin: 6px 0 0 18px; padding: 0;">
-                                <li>Ваш цифровой <strong>Telegram ID</strong> (можно быстро узнать через бота <a href="https://t.me/userinfobot" target="_blank" style="color: #b45309; font-weight: 600; text-decoration: underline;">@userinfobot</a>);</li>
-                                <li>Вашу <strong>ссылку на подписку</strong> или ключ (начинается с vless://, https://...);</li>
-                                <li>ID аккаунта или Email, на который покупали VPN в личном кабинете.</li>
-                            </ul>
+                        <!-- Блок для Telegram-аккаунта -->
+                        <div id="field-telegram">
+                            <label for="tg_username" class="form-label" style="font-size: 13px;">Ваш юзернейм или цифровой ID в Telegram</label>
+                            <input type="text" id="tg_username" name="tg_username" class="form-input" placeholder="@username или цифровой Telegram ID (123456789)">
+                            <div style="margin-top: 6px; font-size: 12px; color: #6b7280; line-height: 1.4;">
+                                💡 <em>Если ваш ник скрыт или его нет, укажите цифровой Telegram ID (узнать его можно в боте <a href="https://t.me/userinfobot" target="_blank" style="color: #2563eb; font-weight: 600; text-decoration: underline;">@userinfobot</a>).</em>
+                            </div>
+                        </div>
+
+                        <!-- Блок для Email-регистрации -->
+                        <div id="field-email-reg" style="display: none;">
+                            <label for="reg_email" class="form-label" style="font-size: 13px;">Email, указанный при регистрации или покупке</label>
+                            <input type="email" id="reg_email" name="reg_email" class="form-input" placeholder="login@example.com">
+                            <div style="margin-top: 6px; font-size: 12px; color: #6b7280; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                                <span>💡 <em>По этому адресу мы найдём вашу подписку.</em></span>
+                                <button type="button" id="copy-email-btn" style="background: none; border: none; color: #2563eb; font-weight: 600; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0;">Тот же, что и для ответа</button>
+                            </div>
                         </div>
                     </div>
 

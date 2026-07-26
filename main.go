@@ -329,8 +329,8 @@ func processEmails(email, tgUsername, message string, imagePaths []string) {
 
 	bodyAdmin := fmt.Sprintf(`
 		<h2>Новое обращение в службу поддержки</h2>
-		<p><strong>Email клиента:</strong> %s</p>
-		<p><strong>Telegram:</strong> %s</p>
+		<p><strong>Email для связи (ответа):</strong> %s</p>
+		<p><strong>Данные аккаунта / подписки:</strong> %s</p>
 		<hr>
 		<h3>Суть проблемы:</h3>
 		<p style="white-space: pre-wrap;">%s</p>
@@ -371,7 +371,7 @@ func sendTelegramNotification(clientID, email, tgUsername, message string, image
 	if tgUsername != "" {
 		tgInfo = tgUsername
 	}
-	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nID: %s\nEmail: %s\nTG: %s\n\nПроблема:\n%s",
+	text := fmt.Sprintf("🚨 Новый тикет в поддержку\n\nID: %s\nEmail для связи: %s\nАккаунт подписки:\n%s\n\nПроблема:\n%s",
 		clientID, email, tgInfo, message)
 
 	if len(imagePaths) > 0 {
