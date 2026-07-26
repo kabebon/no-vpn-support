@@ -108,6 +108,9 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 	if smtpHost != "" {
 		go processEmails(req)
 	}
+	if tgBotToken != "" && tgChatID != "" {
+		go sendTelegramNotification(req)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -119,10 +122,15 @@ func handleTicket(w http.ResponseWriter, r *http.Request) {
 
 func processEmails(req TicketRequest) {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
+	
+	fromEmail := os.Getenv("SMTP_FROM")
+	if fromEmail == "" {
+		fromEmail = smtpUser
+	}
 
 	// Письмо Администратору
 	mAdmin := gomail.NewMessage()
-	mAdmin.SetHeader("From", mAdmin.FormatAddress(smtpUser, senderName))
+	mAdmin.SetHeader("From", mAdmin.FormatAddress(fromEmail, senderName))
 	mAdmin.SetHeader("To", supportEmail)
 	mAdmin.SetHeader("Reply-To", req.Email)
 	mAdmin.SetHeader("Subject", "Новое обращение в поддержку от "+req.Email)
@@ -142,11 +150,13 @@ func processEmails(req TicketRequest) {
 	`, req.Email, tgInfo, req.Message)
 
 	mAdmin.SetBody("text/html", bodyAdmin)
-	dialer.DialAndSend(mAdmin)
+	if err := dialer.DialAndSend(mAdmin); err != nil {
+		log.Printf("Ошибка отправки админу: %v\n", err)
+	}
 
 	// Автоответ Клиенту
 	mClient := gomail.NewMessage()
-	mClient.SetHeader("From", mClient.FormatAddress(smtpUser, senderName))
+	mClient.SetHeader("From", mClient.FormatAddress(fromEmail, senderName))
 	mClient.SetHeader("To", req.Email)
 	mClient.SetHeader("Subject", "Ваше обращение принято - "+senderName)
 	
@@ -158,11 +168,8 @@ func processEmails(req TicketRequest) {
 	`, req.Message)
 
 	mClient.SetBody("text/html", bodyClient)
-	dialer.DialAndSend(mClient)
-
-	// Уведомление в Telegram
-	if tgBotToken != "" && tgChatID != "" {
-		sendTelegramNotification(req)
+	if err := dialer.DialAndSend(mClient); err != nil {
+		log.Printf("Ошибка отправки клиенту: %v\n", err)
 	}
 }
 
@@ -266,8 +273,14 @@ func telegramBotListener() {
 
 func sendReplyEmail(toEmail, replyText string) error {
 	dialer := gomail.NewDialer(smtpHost, smtpPort, smtpUser, smtpPass)
+	
+	fromEmail := os.Getenv("SMTP_FROM")
+	if fromEmail == "" {
+		fromEmail = smtpUser
+	}
+
 	m := gomail.NewMessage()
-	m.SetHeader("From", m.FormatAddress(smtpUser, senderName))
+	m.SetHeader("From", m.FormatAddress(fromEmail, senderName))
 	m.SetHeader("To", toEmail)
 	m.SetHeader("Subject", "Re: Обращение в поддержку - "+senderName)
 
